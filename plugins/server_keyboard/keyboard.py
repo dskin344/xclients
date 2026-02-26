@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import select
 import sys
 import termios
@@ -11,11 +12,15 @@ import tyro
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class Config:
     host: str = "0.0.0.0"
     port: int = 8080
+    loop: bool = False  # whether to debug in loop, right here right now
 
 
 class KeyboardPolicy(BasePolicy):
@@ -39,6 +44,7 @@ class KeyboardPolicy(BasePolicy):
             key = self._read_key()
             if key is None:
                 return pressed
+            logger.info(f"Read key: {key}")
             pressed[key] = True
 
     def reset(self, *_args: object, **_kwargs: object) -> None:
@@ -83,11 +89,17 @@ class KeyboardPolicy(BasePolicy):
 
 def main(cfg: Config) -> None:
     policy = KeyboardPolicy()
-    if not policy.enabled:
-        raise RuntimeError("stdin is not a TTY. Run in an interactive terminal.")
     try:
+        if not policy.enabled:
+            raise RuntimeError("stdin is not a TTY. Run in an interactive terminal.")
+
+        if cfg.loop:
+            while True:
+                obs = policy.step()
+
         Server(policy, cfg.host, cfg.port).serve()
-    finally:
+    except KeyboardInterrupt:
+        logger.info("Shutting down server...")
         policy.close()
 
 
