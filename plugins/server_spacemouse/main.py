@@ -10,12 +10,6 @@ from pathlib import Path
 import numpy as np
 from rich import print
 
-# Allow importing local viewer implementation without installing the package
-ROOT = Path(__file__).resolve().parent
-SRC_DIR = ROOT / "src"
-if SRC_DIR.exists():
-    sys.path.insert(0, str(SRC_DIR))
-
 from server_spacemouse.viewer import Viewer
 from webpolicy.client import Client
 
