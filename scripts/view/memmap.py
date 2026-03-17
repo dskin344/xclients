@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 import time
 
+import cv2
 import numpy as np
 import rerun as rr
 import tyro
@@ -116,7 +117,7 @@ def main(cfg: Config) -> None:
             for camera_name, key in CAMERA_KEYS.items():
                 frame = item.get(key)
                 if isinstance(frame, np.ndarray):
-                    frames[camera_name] = frame
+                    frames[camera_name] = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             if frames:
                 scene.log_camera_images(frames)
 
@@ -124,7 +125,7 @@ def main(cfg: Config) -> None:
             if pose is not None:
                 pose_values = np.asarray(pose, dtype=float).reshape(-1)
                 if len(pose_values) >= 3:
-                    position3d = pose_values[:3].reshape(1, 3)
+                    position3d = (pose_values[:3] / 1000.0).reshape(1, 3)
                     scene.log_points3d(
                         position3d,
                         colors=np.array([[255, 64, 64]], dtype=np.uint8),
