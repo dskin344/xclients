@@ -20,7 +20,7 @@ class URDFSceneConfig(Config):
     port: int = 8000
     urdf: Path = Path("xarm7_standalone.urdf")
     app_id: str = "urdf_scene"
-    cameras: list[str] = field(default_factory=list)
+    cams: list[Path] = field(default_factory=list)
     entity_path_prefix: str = "robot"
     transforms_path: str = "robot/transforms"
     spawn: bool = True
@@ -33,6 +33,7 @@ class URDFSceneConfig(Config):
 
     def __post_init__(self) -> None:
         self.urdf = self.urdf.expanduser().resolve()
+        self.cams = [path.expanduser().resolve() for path in self.cams]
 
 
 def sample_joint_value(
@@ -60,7 +61,7 @@ def main(cfg: URDFSceneConfig) -> None:
     scene = RerunScene(
         cfg.urdf,
         app_id=cfg.app_id,
-        cameras=cfg.cameras,
+        camera_ht_files=cfg.cams,
         entity_path_prefix=cfg.entity_path_prefix,
         transforms_path=cfg.transforms_path,
         spawn=cfg.spawn,

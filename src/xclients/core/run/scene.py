@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 
@@ -8,8 +9,19 @@ import numpy as np
 import rerun as rr
 import rerun.urdf as rru
 
+from xclients.core import tf as xctf
 from xclients.core.run.blueprint import init_blueprint
 from xclients.core.run.fustrum import log_fustrum
+
+
+@dataclass
+class CameraCalibration:
+    name: str
+    ht_path: Path
+    intrinsics: np.ndarray
+    extrinsics: np.ndarray
+    width: int
+    height: int
 
 
 class RerunScene:
@@ -23,6 +35,9 @@ class RerunScene:
         joint_values_path: str | None = None,
         world_path: Path = Path("world"),
         cameras: Sequence[str | int] | None = None,
+        camera_ht_files: Sequence[Path] | None = None,
+        camera_resolution: tuple[int, int] = (640, 480),
+        camera_focal_length: tuple[float, float] = (515.0, 515.0),
         spawn: bool = True,
         rrd_path: Path | None = None,
         view_coordinates: rr.ViewCoordinates = rr.ViewCoordinates.FLU,
@@ -35,6 +50,9 @@ class RerunScene:
         self.joint_values_path = joint_values_path or f"{self.entity_path_prefix}/joint_values"
         self.world_path = world_path
         self.cameras = list(cameras or [])
+        self.camera_ht_files = [Path(path).expanduser().resolve() for path in camera_ht_files or []]
+        self.camera_resolution = camera_resolution
+        self.camera_focal_length = camera_focal_length
         self.spawn = spawn
         self.rrd_path = rrd_path
         self.view_coordinates = view_coordinates
@@ -49,9 +67,8 @@ class RerunScene:
                 self.log.warning("Failed to spawn rerun viewer: %s", exc)
 
         rr.log("/", self.view_coordinates, static=True)
-        if self.cameras:
-            init_blueprint(self.cameras)
-
+        rr.log(str(self.world_path), rr.CoordinateFrame(frame=str(self.world_path)), static=True)
+        rr.log(str(self.world_path), self.view_coordinates, static=True)
         rr.log_file_from_path(self.urdf, entity_path_prefix=self.entity_path_prefix, static=True)
 
         self.urdf_tree = rru.UrdfTree.from_file_path(self.urdf, entity_path_prefix=self.entity_path_prefix)
@@ -62,15 +79,22 @@ class RerunScene:
         self.joint_names = list(self.joint_map)
         self.joint_values_rad = {name: self._clamp_joint_value(joint, 0.0) for name, joint in self.joint_map.items()}
 
+        self.camera_calibrations = self._load_camera_calibrations(self.camera_ht_files)
+        if self.camera_calibrations:
+            self.set_cameras(list(self.camera_calibrations))
+            self.log_camera_poses(self.camera_calibrations)
+        elif self.cameras:
+            init_blueprint(self.cameras)
+
     def set_cameras(self, cameras: Sequence[str | int]) -> None:
         self.cameras = list(cameras)
         if self.cameras:
             init_blueprint(self.cameras)
 
-    def log_camera_poses(self, cameras: dict, *, inv: bool = False) -> None:
+    def log_camera_poses(self, cameras: Mapping[str | int, dict], *, inv: bool = False) -> None:
         if cameras and not self.cameras:
             self.set_cameras(list(cameras))
-        log_fustrum(cameras, root=self.world_path, inv=inv)
+        log_fustrum(dict(cameras), root=self.world_path, inv=inv)
 
     def log_camera_images(
         self,
@@ -107,6 +131,38 @@ class RerunScene:
                 f"{self.joint_values_path}/{name}",
                 rr.Scalars([float(np.rad2deg(self.joint_values_rad[name]))]),
             )
+
+    def _load_camera_calibrations(self, paths: Sequence[Path]) -> dict[str, dict]:
+        calibrations = {}
+        width, height = self.camera_resolution
+        fx, fy = self.camera_focal_length
+        intrinsics = np.array(
+            [
+                [fx, 0.0, width / 2.0],
+                [0.0, fy, height / 2.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+
+        for path in paths:
+            data = np.load(path)
+            ht = {k: data[k] for k in data.files}["HT"]
+            calibration = CameraCalibration(
+                name=path.parent.name,
+                ht_path=path,
+                intrinsics=intrinsics.copy(),
+                extrinsics=xctf.RDF2FLU @ np.linalg.inv(ht),
+                width=width,
+                height=height,
+            )
+            calibrations[calibration.name] = {
+                "intrinsics": calibration.intrinsics,
+                "extrinsics": calibration.extrinsics,
+                "width": calibration.width,
+                "height": calibration.height,
+            }
+
+        return calibrations
 
     def _joint_transform_columns(self):
         translations = []
