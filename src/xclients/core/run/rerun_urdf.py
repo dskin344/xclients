@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+from pathlib import Path
 from typing import cast, TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -16,11 +17,7 @@ if TYPE_CHECKING:
 
 def ez_load_urdf(p: Path) -> None:
     urdf = URDF.load(str(p))
-    import trimesh
-
-    trimesh.transformations.scale_matrix(1)
-    scaled = urdf.scene.scaled(1.001)
-    log_scene(scene=scaled, node=urdf.base_link, path="/robot/urdf", static=True)
+    log_scene(scene=urdf.scene, node=urdf.base_link, path="/robot/urdf", static=True)
 
 
 def ament_locate_package(fname: str) -> str:
@@ -39,9 +36,30 @@ def load_urdf_from_msg(msg: String) -> URDF:
     return URDF.load(f, filename_handler=ament_locate_package)
 
 
+def _scene_path(path: str | None, node: str) -> str:
+    return path + "/" + node if path else node
+
+
+def _log_node_transform(scene: trimesh.Scene, node: str, path: str | None = None, static: bool = False) -> None:
+    entity_path = _scene_path(path, node)
+    parent = scene.graph.transforms.parents.get(node)
+    node_data = scene.graph.get(frame_to=node, frame_from=parent)
+
+    if node_data and parent:
+        world_from_mesh = node_data[0]
+        rr.log(
+            entity_path,
+            rr.Transform3D(
+                translation=world_from_mesh[0:3, 3],
+                mat3x3=world_from_mesh[0:3, 0:3],
+            ),
+            static=static,
+        )
+
+
 def log_scene(scene: trimesh.Scene, node: str, path: str | None = None, static: bool = False) -> None:
     """Log a trimesh scene to rerun."""
-    path = path + "/" + node if path else node
+    entity_path = _scene_path(path, node)
 
     parent = scene.graph.transforms.parents.get(node)
     children = scene.graph.transforms.children.get(node)
@@ -50,16 +68,7 @@ def log_scene(scene: trimesh.Scene, node: str, path: str | None = None, static: 
 
     if node_data:
         # Log the transform between this node and its direct parent (if it has one!).
-        if parent:
-            world_from_mesh = node_data[0]
-            rr.log(
-                path,
-                rr.Transform3D(
-                    translation=world_from_mesh[3, 0:3],
-                    mat3x3=world_from_mesh[0:3, 0:3],
-                ),
-                static=static,
-            )
+        _log_node_transform(scene=scene, node=node, path=path, static=static)
 
         # Log this node's mesh, if it has one.
         mesh = cast("trimesh.Trimesh", scene.geometry.get(node_data[1]))
@@ -84,10 +93,10 @@ def log_scene(scene: trimesh.Scene, node: str, path: str | None = None, static: 
             except Exception:
                 pass
 
-            albedo_factor = mean_vertex_color if mean_vertex_color.any() else visual_color
+            albedo_factor = mean_vertex_color if mean_vertex_color is not None else visual_color
 
             rr.log(
-                path,
+                entity_path,
                 rr.Mesh3D(
                     vertex_positions=mesh.vertices,
                     triangle_indices=mesh.faces,
@@ -100,3 +109,13 @@ def log_scene(scene: trimesh.Scene, node: str, path: str | None = None, static: 
     if children:
         for child in children:
             log_scene(scene, child, path, static)
+
+
+def log_scene_transforms(scene: trimesh.Scene, node: str, path: str | None = None, static: bool = False) -> None:
+    """Log only transforms for a trimesh scene to rerun."""
+    children = scene.graph.transforms.children.get(node)
+    _log_node_transform(scene=scene, node=node, path=path, static=static)
+
+    if children:
+        for child in children:
+            log_scene_transforms(scene, child, path, static)
