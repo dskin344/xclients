@@ -5,8 +5,11 @@ import datetime
 from enum import Enum
 import logging
 from pathlib import Path
+import sys
+import termios
 import threading
 import time
+import tty
 
 import cv2
 from evdev import ecodes, InputDevice
@@ -20,9 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 CAM_MAP = {
-    "over": 0,
-    "side": 2,
-    "low": 4,
+    "jake": 0
 }
 
 
@@ -80,16 +81,10 @@ class FootPedalRunner:
     def __init__(
         self,
         path="/dev/input/by-id/usb-PCsensor_FootSwitch-event-kbd",
-        callback=None,
     ):
-        self.device = InputDevice(path)
-        self.device.grab()
-
-        # Start a background thread to continuously read events
-        self.thread = threading.Thread(target=self.read, daemon=True)
-        self.thread.start()
         self.value = np.array([0, 0, 0])
         self.hz = 50
+        self.callback = None
 
         self.pmap = {
             ecodes.KEY_A: 0,
@@ -97,24 +92,44 @@ class FootPedalRunner:
             ecodes.KEY_C: 2,
         }
 
-        self.callback = []
+        # Try to connect to USB foot pedal; fall back to keyboard only
+        self.device = None
+        try:
+            self.device = InputDevice(path)
+            self.device.grab()
+            threading.Thread(target=self._read_pedal, daemon=True).start()
+            logger.info("Foot pedal connected.")
+        except Exception as e:
+            logger.warning(f"Foot pedal not found ({e}), using keyboard fallback.")
 
-    def read(self):
-        """
-        Continuously reads events from the foot pedal device
-        as 3-element array whenever a pedal's state changes.
-        """
+        threading.Thread(target=self._read_keyboard, daemon=True).start()
 
+    def _read_pedal(self):
         for event in self.device.read_loop():
             if event.type == ecodes.EV_KEY and event.code in self.pmap:
                 p = self.pmap[event.code]
                 new = event.value  # 0=release, 1=press, 2=hold/repeat
-
-                if changed := (self.value[p] != new):
+                if self.value[p] != new:
                     self.value[p] = new
-
                     if self.callback:
                         self.callback(self.value)
+
+    def _read_keyboard(self):
+        """Press 'p' to trigger pedal 0 (same as foot pedal press)."""
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            while True:
+                ch = sys.stdin.read(1)
+                if ch == "s":
+                    self.value[0] = 1
+                    if self.callback:
+                        self.callback(self.value)
+                elif ch in ("q", "\x03"):  # q or Ctrl+C
+                    sys.exit(0)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 class Mode(str, Enum):
@@ -161,15 +176,6 @@ def spec(arr):
     return jax.tree.map(lambda x: x.shape, arr)
 
 
-def _flush(episode: dict[list], ep: int, cfg: Config):
-    episode = {k: np.array(v) for k, v in episode.items()}
-    pprint(spec(episode))
-    # quit()
-    # episode = {CAM_MAP[k]: v for k, v in episode.items() if k in CAM_MAP}
-    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = str(cfg.dir / f"ep{ep}_{now}")
-
-
 def flush(episode: dict, ep: int, cfg: RunCFG):
     print("what", len(episode))
     # episode = {CAM_MAP[k]: v for k, v in episode.items() if k in CAM_MAP}
@@ -185,11 +191,10 @@ def recolor(img):
 
 
 def wait_for_pedal(pedal: FootPedalRunner, cams: dict[int, MyCamera], show: bool):
-    pprint("press pedal to start recording")
+    pprint("press pedal (or s) to start recording")
 
-    def border(img):
-        """makes a red border around the image"""
-        img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0, 0, 255))
+    def border(img, color):
+        img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=color)
         return img
 
     while True:
@@ -198,10 +203,10 @@ def wait_for_pedal(pedal: FootPedalRunner, cams: dict[int, MyCamera], show: bool
         all_imgs = np.concatenate(list(imgs.values()), axis=1)
 
         if show:
-            cv2.imshow("frame", border(recolor(all_imgs)))
+            cv2.imshow("frame", border(recolor(all_imgs), (0, 255, 0)))  # green = ready
             key = cv2.waitKey(1)
             if key == ord("q"):
-                break
+                sys.exit(0)
         p = pedal.value
         if p[0] == 1:
             pedal.value[0] = 0
@@ -229,6 +234,15 @@ def main(cfg: Config):
             # pprint(spec(data))
             for i in tqdm(range(n), leave=False):
                 steps = {k: v[i] for k, v in data.items()}
+                all_imgs = np.concatenate(list(steps.values()), axis=1)
+                if i == 0:
+                    firsts.append(all_imgs)
+                cv2.imshow("frame", recolor(all_imgs))
+                if cfg.show_first_only:
+                    break
+
+                if (key := cv2.waitKey(wait)) == ord("q"):
+                    break
                 all_imgs = np.concatenate(list(steps.values()), axis=1)
                 if i == 0:
                     firsts.append(all_imgs)
@@ -284,6 +298,7 @@ def main(cfg: Config):
 
             if cfg.viz:
                 all_imgs = np.concatenate(list(imgs.values()), axis=1)
+                all_imgs = cv2.copyMakeBorder(all_imgs, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0, 0, 255))  # red = recording
                 cv2.imshow("frame", recolor(all_imgs))
                 key = cv2.waitKey(1)
                 if key == ord("q"):
