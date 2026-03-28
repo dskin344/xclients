@@ -150,16 +150,6 @@ class Config:
     mode: Mode = Mode.COLLECT
     show_first_only: bool = False  # show only the first frame of each episode
 
-    # ===
-    # task: str = input("Task: ").lower()
-    # base_dir: str = Path("~/data").expanduser()
-    # time: str = time.strftime("%Y%m%d-%H%M%S")
-    # env_name: str = f"xgym-mano-{task}-{time}"
-    # data_dir: str = base_dir / env_name
-    # nsteps: int = 300
-    # nepisodes: int = 100
-    # >>> 3bda70f (gym)
-
     def __post_init__(self):
         self.dir = Path(self.dir)
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -177,13 +167,9 @@ def spec(arr):
 
 
 def flush(episode: dict, ep: int, cfg: RunCFG):
-    print("what", len(episode))
-    # episode = {CAM_MAP[k]: v for k, v in episode.items() if k in CAM_MAP}
     out = str(cfg.dir / f"ep{ep}")
 
-    print(episode)
     np.savez(out, **episode)
-    # cu.save_frames(v, str(cfg.dir / f"ep{ep}_{k}"), ext="mp4", fps=30)
 
 
 def recolor(img):
@@ -204,7 +190,7 @@ def wait_for_pedal(pedal: FootPedalRunner, cams: dict[int, MyCamera], show: bool
 
         if show:
             cv2.imshow("frame", border(recolor(all_imgs), (0, 255, 0)))  # green = ready
-            key = cv2.waitKey(1)
+            key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 sys.exit(0)
         p = pedal.value
@@ -231,7 +217,6 @@ def main(cfg: Config):
             print(data.keys())
             n = len(data[list(data.keys())[0]])
 
-            # pprint(spec(data))
             for i in tqdm(range(n), leave=False):
                 steps = {k: v[i] for k, v in data.items()}
                 all_imgs = np.concatenate(list(steps.values()), axis=1)
@@ -241,7 +226,7 @@ def main(cfg: Config):
                 if cfg.show_first_only:
                     break
 
-                if (key := cv2.waitKey(wait)) == ord("q"):
+                if (key := cv2.waitKey(wait) & 0xFF) == ord("q"):
                     break
                 all_imgs = np.concatenate(list(steps.values()), axis=1)
                 if i == 0:
@@ -250,18 +235,18 @@ def main(cfg: Config):
                 if cfg.show_first_only:
                     break
 
-                if (key := cv2.waitKey(wait)) == ord("q"):
+                if (key := cv2.waitKey(wait) & 0xFF) == ord("q"):
                     break
-            if (key := cv2.waitKey(wait)) == ord("q"):
+            if (key := cv2.waitKey(wait) & 0xFF) == ord("q"):
                 break
 
         _f = 255 - np.array(firsts)[..., -1:].std(0).astype(np.uint8)  # [...,-1:]
         _f = 255 - _f
         _f = np.clip(_f**1.4, 0, 255)
+
         # normalize the view of the std img
-        # _f = (_f - _f.mean()) /(_f.std() + 1e-6)
-        # _f = _f  *(_f.std() + 1e-6)
         cv2.imshow("std", recolor(_f.astype(np.uint8)))
+
         # save the std image
         now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         out = str(f"std_{now}.png")
@@ -273,7 +258,6 @@ def main(cfg: Config):
     dt = 1 / fps
 
     cams = {k: MyCamera(v) for k, v in CAM_MAP.items()}
-    # cams = {k: cv2.VideoCapture(k) for k in CAM_MAP}
     print(cams)
     pedal = FootPedalRunner()
     time.sleep(2)
@@ -288,21 +272,16 @@ def main(cfg: Config):
 
             imgs = {k: cam.read()[1] for k, cam in cams.items()}
 
-            # mycamera is already in RGB format
-            # imgs = {k:cv2.cvtColor(v, cv2.COLOR_RGB2BGR) for k,v in imgs.items()}
-            # imgs = {k: cu.square(f) for k, f in imgs.items()}
-            # imgs = {k: cv2.resize(f, (224, 224)) for k, f in imgs.items()}
-
             for k, v in imgs.items():
                 frames[k].append(v)
 
             if cfg.viz:
                 all_imgs = np.concatenate(list(imgs.values()), axis=1)
-                all_imgs = cv2.copyMakeBorder(all_imgs, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0, 0, 255))  # red = recording
+                all_imgs = cv2.copyMakeBorder(all_imgs, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(255, 0, 0))  # red = recording
                 cv2.imshow("frame", recolor(all_imgs))
-                key = cv2.waitKey(1)
+                key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
-                    break
+                    sys.exit(0)
 
             if pedal.value[0] == 1:
                 pedal.value[0] = 0
