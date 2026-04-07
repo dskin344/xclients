@@ -210,6 +210,9 @@ def main(cfg: PrepConfig):
             s = s | {"k3ds": k3ds}
             # print(spec(s))
             _ep.append(s)
+        if not _ep:
+            log.warning("No valid steps in episode, skipping.")
+            continue
         _ep = jax.tree.map(lambda *x: np.stack(x, axis=0), *_ep)
         print(spec(_ep))
         yield _ep
