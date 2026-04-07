@@ -140,10 +140,12 @@ class ManoP(Prediction):
 
 
 @dataclass
-class PrepConfig(Config):
+class PrepConfig:
     dir: Path  # data directory
     fps: int = 30
     show_first_only: bool = False
+    port: int = 8000
+    host: str = "localhost"
 
 
 def load_extr(name: str):

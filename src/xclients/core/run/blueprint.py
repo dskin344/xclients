@@ -18,7 +18,7 @@ def create_blueprint(cameras: list, parent: Path = Path("world")) -> rrb.Bluepri
             rrb.Vertical(
                 contents=[
                     rrb.Spatial2DView(
-                        origin=f"{parent}/cam/{cam}/",
+                        origin=f"{parent}/cam/{cam}/image",
                         contents=[
                             "+ $origin/**",
                         ],
