@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 CAM_MAP = {
     "side": 0,
-    "low": 2
+    "low": 2,
+    "left": 14,
+    "brio": 10
 }
 
 
@@ -42,7 +44,12 @@ class MyCamera:
         self.dt = 1 / self.fps
 
         self.img = None
-        _, self.img = self.cam.read()
+        if not self.cam.isOpened():
+            logger.error(f"Camera {cam} failed to open (device not accessible).")
+            return
+        ret, self.img = self.cam.read()
+        if not ret or self.img is None:
+            logger.error(f"Camera {cam} opened but failed to read first frame.")
         self.start()
         time.sleep(0.1)
 
@@ -145,7 +152,6 @@ class Config:
     episodes: int = 100  # number of episodes to record
     fps: int = 50  # fps of data (not of the cameras)
 
-    viz: bool = False  # show the camera images while recording
     cammap: bool = False  # assert that you checked the cam map with camera.py
     mode: Mode = Mode.COLLECT
     show_first_only: bool = False  # show only the first frame of each episode
@@ -271,13 +277,12 @@ def main(cfg: Config):
             for k, v in imgs.items():
                 frames[k].append(v)
 
-            if cfg.viz:
-                all_imgs = np.concatenate(list(imgs.values()), axis=1)
-                all_imgs = cv2.copyMakeBorder(all_imgs, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(255, 0, 0))  # red = recording
-                cv2.imshow("frame", recolor(all_imgs))
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
-                    sys.exit(0)
+            all_imgs = np.concatenate(list(imgs.values()), axis=1)
+            all_imgs = cv2.copyMakeBorder(all_imgs, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(255, 0, 0))  # red = recording
+            cv2.imshow("frame", recolor(all_imgs))
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                sys.exit(0)
 
             toc = time.time()
             elapsed = toc - tic
