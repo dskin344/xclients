@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 CAM_MAP = {
     "side": 0,
-    "low": 2,
+    "low": 12,
     "left": 14,
-    "brio": 10
+    "brio": 2
 }
 
 
@@ -178,6 +178,18 @@ def recolor(img):
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
+def hstack(imgs: list[np.ndarray]) -> np.ndarray:
+    """Horizontally stack images, resizing all to the same height as the first."""
+    h = imgs[0].shape[0]
+    resized = []
+    for img in imgs:
+        if img.shape[0] != h:
+            w = int(img.shape[1] * h / img.shape[0])
+            img = cv2.resize(img, (w, h))
+        resized.append(img)
+    return np.concatenate(resized, axis=1)
+
+
 def wait_for_pedal(pedal: FootPedalRunner, cams: dict[int, MyCamera], show: bool):
     pprint("press pedal (or s) to start recording")
 
@@ -188,7 +200,7 @@ def wait_for_pedal(pedal: FootPedalRunner, cams: dict[int, MyCamera], show: bool
     while True:
         imgs = {k: cam.read() for k, cam in cams.items()}
         imgs = {k: v[1] for k, v in imgs.items() if v[0]}
-        all_imgs = np.concatenate(list(imgs.values()), axis=1)
+        all_imgs = hstack(list(imgs.values()))
 
         if show:
             cv2.imshow("frame", border(recolor(all_imgs), (0, 255, 0)))  # green = ready
@@ -221,7 +233,7 @@ def main(cfg: Config):
 
             for i in tqdm(range(n), leave=False):
                 steps = {k: v[i] for k, v in data.items()}
-                all_imgs = np.concatenate(list(steps.values()), axis=1)
+                all_imgs = hstack(list(steps.values()))
                 if i == 0:
                     firsts.append(all_imgs)
                 cv2.imshow("frame", recolor(all_imgs))
@@ -230,7 +242,7 @@ def main(cfg: Config):
 
                 if (key := cv2.waitKey(wait) & 0xFF) == ord("q"):
                     break
-                all_imgs = np.concatenate(list(steps.values()), axis=1)
+                all_imgs = hstack(list(steps.values()))
                 if i == 0:
                     firsts.append(all_imgs)
                 cv2.imshow("frame", recolor(all_imgs))
@@ -259,6 +271,8 @@ def main(cfg: Config):
     fps = cfg.fps
     dt = 1 / fps
 
+    cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+
     cams = {k: MyCamera(v) for k, v in CAM_MAP.items()}
     print(cams)
     pedal = FootPedalRunner()
@@ -277,7 +291,7 @@ def main(cfg: Config):
             for k, v in imgs.items():
                 frames[k].append(v)
 
-            all_imgs = np.concatenate(list(imgs.values()), axis=1)
+            all_imgs = hstack(list(imgs.values()))
             all_imgs = cv2.copyMakeBorder(all_imgs, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(255, 0, 0))  # red = recording
             cv2.imshow("frame", recolor(all_imgs))
             key = cv2.waitKey(1) & 0xFF
