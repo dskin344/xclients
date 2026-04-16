@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 CAM_MAP = {
     "side": 0,
     "low": 12,
-    "left": 14,
+    "left": 6,
     "brio": 2
 }
 
@@ -117,6 +117,8 @@ class FootPedalRunner:
             if event.type == ecodes.EV_KEY and event.code in self.pmap:
                 p = self.pmap[event.code]
                 new = event.value  # 0=release, 1=press, 2=hold/repeat
+                if new == 2:
+                    continue
                 if self.value[p] != new:
                     self.value[p] = new
                     if self.callback:
@@ -149,7 +151,7 @@ class Mode(str, Enum):
 class Config:
     dir: str  # path to the directory where the data will be saved
 
-    episodes: int = 100  # number of episodes to record
+    episodes: int = 20  # number of episodes to record
     fps: int = 50  # fps of data (not of the cameras)
 
     cammap: bool = False  # assert that you checked the cam map with camera.py
