@@ -215,6 +215,13 @@ def main(cfg: PrepConfig):
             continue
         _ep = jax.tree.map(lambda *x: np.stack(x, axis=0), *_ep)
         print(spec(_ep))
+
+        out_dir = cfg.dir / "prep"
+        out_dir.mkdir(exist_ok=True)
+        out_path = out_dir / p.name
+        np.savez(out_path, **_ep)
+        print(f"Saved {out_path}")
+
         yield _ep
 
 
