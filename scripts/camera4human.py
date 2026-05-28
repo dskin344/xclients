@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 CAM_MAP = {
-    "side": 0,
-    "low": 12,
-    "left": 6,
-    "brio": 2
+    "side": "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C930e_F95DA4BE-video-index0",
+    "low": "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C930e_4089B49E-video-index0",
+    "move": "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C930e_AD3F052E-video-index0",
+    "right": "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C930e_1E9C6AAE-video-index0"
 }
 
 
@@ -157,6 +157,7 @@ class Config:
     cammap: bool = False  # assert that you checked the cam map with camera.py
     mode: Mode = Mode.COLLECT
     show_first_only: bool = False  # show only the first frame of each episode
+    ep: int | None = None  # if set in PLAY mode, only play this episode
 
     def __post_init__(self):
         self.dir = Path(self.dir)
@@ -216,7 +217,10 @@ def wait_for_pedal(pedal: FootPedalRunner, cams: dict[int, MyCamera], show: bool
 
 def main(cfg: Config):
     if cfg.mode == Mode.PLAY:
-        eps = list(cfg.dir.glob("ep*.npz"))
+        if cfg.ep is not None:
+            eps = [cfg.dir / f"ep{cfg.ep}.npz"]
+        else:
+            eps = list(cfg.dir.glob("ep*.npz"))
         wait = int(1000 / cfg.fps)  # convert fps to ms
         firsts = []
         for ep in tqdm(eps, leave=False):
